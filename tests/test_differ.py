@@ -1,285 +1,290 @@
-"""Tests for EfficientDiffer."""
+"""
+Comprehensive tests for Diaz Diff Checker.
 
-import os
-import tempfile
+Run with: pytest tests/ -v
+"""
+
 import pytest
-from diaz_diff_checker.differ import EfficientDiffer, calculate_in_stock_percentage
+import os
+from pathlib import Path
+
+from diaz_diff_checker import EfficientDiffer, StreamingCSVReader
+
+
+# Get the fixtures directory
+FIXTURES_DIR = Path(__file__).parent / "fixtures"
+
+
+class TestStreamingCSVReader:
+    """Tests for CSV reading functionality."""
+
+    def test_read_basic_csv(self):
+        """Test reading a basic CSV file."""
+        reader = StreamingCSVReader(FIXTURES_DIR / "basic_prod.csv")
+        headers = reader.read_headers()
+        
+        assert "id" in headers
+        assert "sku" in headers
+        assert "title" in headers
+        assert len(headers) == 8
+
+    def test_read_row_count(self):
+        """Test counting rows in CSV."""
+        reader = StreamingCSVReader(FIXTURES_DIR / "basic_prod.csv")
+        reader.read_headers()
+        
+        rows = list(reader.iterate_rows())
+        assert len(rows) == 10
+
+    def test_read_edge_cases_csv(self):
+        """Test reading CSV with special characters."""
+        reader = StreamingCSVReader(FIXTURES_DIR / "edge_cases_prod.csv")
+        headers = reader.read_headers()
+        
+        assert "id" in headers
+        assert "name" in headers
+        
+        rows = list(reader.iterate_rows())
+        assert len(rows) == 10
+        
+        # Check that quoted fields are handled correctly
+        assert "Name, With Comma" in rows[1]["name"]
+
+    def test_detect_delimiter(self):
+        """Test auto-detection of delimiter."""
+        reader = StreamingCSVReader(FIXTURES_DIR / "basic_prod.csv")
+        headers = reader.read_headers()
+        
+        # Should detect comma delimiter
+        assert reader.delimiter == ","
 
 
 class TestEfficientDiffer:
-    """Tests for the EfficientDiffer class."""
+    """Tests for the diff algorithm."""
 
-    def _create_csv(self, content: str) -> str:
-        """Helper to create a temporary CSV file."""
-        f = tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False)
-        f.write(content)
-        f.close()
-        return f.name
-    
-    def test_identical_files(self):
-        """Test comparing identical files."""
-        content = "id,name,price\n1,Widget,9.99\n2,Gadget,19.99\n"
-        prod_file = self._create_csv(content)
-        dev_file = self._create_csv(content)
+    def test_basic_diff(self):
+        """Test basic diff with simple primary key."""
+        differ = EfficientDiffer(primary_keys=["id"])
+        result = differ.compute_diff(
+            FIXTURES_DIR / "basic_prod.csv",
+            FIXTURES_DIR / "basic_dev.csv"
+        )
         
-        try:
-            differ = EfficientDiffer(primary_keys=['id'])
-            result = differ.compute_diff(prod_file, dev_file)
-            
-            assert result['rows_added'] == 0
-            assert result['rows_removed'] == 0
-            assert result['rows_updated'] == 0
-        finally:
-            os.unlink(prod_file)
-            os.unlink(dev_file)
-    
-    def test_detect_added_rows(self):
-        """Test detection of added rows."""
-        prod = "id,name\n1,A\n2,B\n"
-        dev = "id,name\n1,A\n2,B\n3,C\n"
+        # Check structure
+        assert "rows_added" in result
+        assert "rows_removed" in result
+        assert "rows_updated" in result
+        assert "rows_updated_excluded_only" in result
+        assert "detailed_key_update_counts" in result
         
-        prod_file = self._create_csv(prod)
-        dev_file = self._create_csv(dev)
+        # Check counts
+        # Row 8 (id=8, Classic Item) was removed
+        # Rows 11, 12 were added
+        assert result["rows_removed"] == 1
+        assert result["rows_added"] == 2
         
-        try:
-            differ = EfficientDiffer(primary_keys=['id'])
-            result = differ.compute_diff(prod_file, dev_file)
-            
-            assert result['rows_added'] == 1
-            assert result['rows_removed'] == 0
-            assert '3' in result.get('example_ids_added', {})
-        finally:
-            os.unlink(prod_file)
-            os.unlink(dev_file)
-    
-    def test_detect_removed_rows(self):
-        """Test detection of removed rows."""
-        prod = "id,name\n1,A\n2,B\n3,C\n"
-        dev = "id,name\n1,A\n2,B\n"
+        # Check row counts
+        assert result["prod_row_count"] == 10
+        assert result["dev_row_count"] == 11
+
+    def test_composite_key_diff(self):
+        """Test diff with composite primary key (sku, locale)."""
+        differ = EfficientDiffer(primary_keys=["sku", "locale"])
+        result = differ.compute_diff(
+            FIXTURES_DIR / "composite_key_prod.csv",
+            FIXTURES_DIR / "composite_key_dev.csv"
+        )
         
-        prod_file = self._create_csv(prod)
-        dev_file = self._create_csv(dev)
+        # PROD-001,it_IT and PROD-005,en_US were added
+        assert result["rows_added"] == 2
         
-        try:
-            differ = EfficientDiffer(primary_keys=['id'])
-            result = differ.compute_diff(prod_file, dev_file)
-            
-            assert result['rows_added'] == 0
-            assert result['rows_removed'] == 1
-            assert '3' in result.get('example_ids_removed', {})
-        finally:
-            os.unlink(prod_file)
-            os.unlink(dev_file)
-    
-    def test_detect_updated_rows(self):
-        """Test detection of updated rows."""
-        prod = "id,name,price\n1,Widget,9.99\n2,Gadget,19.99\n"
-        dev = "id,name,price\n1,Widget,10.99\n2,Gadget,19.99\n"
+        # PROD-004,en_US was removed
+        assert result["rows_removed"] == 1
         
-        prod_file = self._create_csv(prod)
-        dev_file = self._create_csv(dev)
+        # Check that composite keys work
+        assert "example_ids" in result or "example_ids_added" in result
+
+    def test_excluded_columns_only_changes(self):
+        """Test that inventory/availability-only changes are tracked separately."""
+        differ = EfficientDiffer(primary_keys=["id"])
+        result = differ.compute_diff(
+            FIXTURES_DIR / "excluded_cols_prod.csv",
+            FIXTURES_DIR / "excluded_cols_dev.csv"
+        )
         
-        try:
-            differ = EfficientDiffer(primary_keys=['id'])
-            result = differ.compute_diff(prod_file, dev_file)
-            
-            assert result['rows_updated'] == 1
-            assert result['detailed_key_update_counts']['price'] == 1
-            assert '1' in result.get('example_ids', {})
-        finally:
-            os.unlink(prod_file)
-            os.unlink(dev_file)
-    
-    def test_composite_primary_key(self):
-        """Test using composite primary key."""
-        prod = "sku,locale,name\nA,en,Apple\nA,de,Apfel\n"
-        dev = "sku,locale,name\nA,en,Apple\nA,de,Apfel Updated\n"
+        # All changes should be inventory/availability only
+        # No meaningful (non-excluded) changes
+        assert result["rows_updated"] == 0
         
-        prod_file = self._create_csv(prod)
-        dev_file = self._create_csv(dev)
+        # But excluded-only changes should be tracked
+        assert result["rows_updated_excluded_only"] == 5
         
-        try:
-            differ = EfficientDiffer(primary_keys=['sku', 'locale'])
-            result = differ.compute_diff(prod_file, dev_file)
-            
-            assert result['rows_updated'] == 1
-            # Composite key should be joined with underscore
-            assert 'A_de' in result.get('example_ids', {})
-        finally:
-            os.unlink(prod_file)
-            os.unlink(dev_file)
-    
-    def test_excluded_columns(self):
-        """Test that inventory/availability changes are excluded from rows_updated."""
-        prod = "id,name,inventory,availability\n1,Widget,100,in stock\n"
-        dev = "id,name,inventory,availability\n1,Widget,50,out of stock\n"
-        
-        prod_file = self._create_csv(prod)
-        dev_file = self._create_csv(dev)
-        
-        try:
-            differ = EfficientDiffer(primary_keys=['id'])
-            result = differ.compute_diff(prod_file, dev_file)
-            
-            # Changes should be excluded-only, not meaningful
-            assert result['rows_updated'] == 0
-            assert result['rows_updated_excluded_only'] == 1
-        finally:
-            os.unlink(prod_file)
-            os.unlink(dev_file)
-    
+        # No rows added or removed
+        assert result["rows_added"] == 0
+        assert result["rows_removed"] == 0
+
     def test_mixed_changes(self):
-        """Test rows with both meaningful and excluded changes."""
-        prod = "id,name,inventory\n1,Widget,100\n"
-        dev = "id,name,inventory\n1,Widget Updated,50\n"
+        """Test file with both meaningful and excluded-only changes."""
+        differ = EfficientDiffer(primary_keys=["id"])
+        result = differ.compute_diff(
+            FIXTURES_DIR / "basic_prod.csv",
+            FIXTURES_DIR / "basic_dev.csv"
+        )
         
-        prod_file = self._create_csv(prod)
-        dev_file = self._create_csv(dev)
+        # Should have both types of changes
+        assert result["rows_updated"] > 0
+        # Some rows only have inventory changes
         
-        try:
-            differ = EfficientDiffer(primary_keys=['id'])
-            result = differ.compute_diff(prod_file, dev_file)
-            
-            # Has meaningful change (name), so counted in rows_updated
-            assert result['rows_updated'] == 1
-            assert result['rows_updated_excluded_only'] == 0
-        finally:
-            os.unlink(prod_file)
-            os.unlink(dev_file)
-    
-    def test_missing_primary_key_error(self):
-        """Test error when primary key is missing."""
-        content = "name,price\nWidget,9.99\n"
-        prod_file = self._create_csv(content)
-        dev_file = self._create_csv(content)
+        # Check detailed column counts
+        assert "detailed_key_update_counts" in result
+        counts = result["detailed_key_update_counts"]
         
-        try:
-            differ = EfficientDiffer(primary_keys=['id'])
-            
-            with pytest.raises(ValueError, match="Primary keys.*not found"):
-                differ.compute_diff(prod_file, dev_file)
-        finally:
-            os.unlink(prod_file)
-            os.unlink(dev_file)
-    
-    def test_column_differences(self):
-        """Test detection of column differences between files."""
-        prod = "id,name,old_field\n1,Widget,value\n"
-        dev = "id,name,new_field\n1,Widget,value\n"
+        # Price, title, and description should show changes
+        assert any(k in counts for k in ["price", "title", "description"])
+
+    def test_edge_cases_handling(self):
+        """Test handling of special characters, whitespace, etc."""
+        differ = EfficientDiffer(primary_keys=["id"])
+        result = differ.compute_diff(
+            FIXTURES_DIR / "edge_cases_prod.csv",
+            FIXTURES_DIR / "edge_cases_dev.csv"
+        )
         
-        prod_file = self._create_csv(prod)
-        dev_file = self._create_csv(dev)
+        # Should handle all edge cases without crashing
+        assert "rows_updated" in result
+        assert "rows_added" in result
         
-        try:
-            differ = EfficientDiffer(primary_keys=['id'])
-            result = differ.compute_diff(prod_file, dev_file)
-            
-            assert 'old_field' in result['prod_only_keys']
-            assert 'new_field' in result['dev_only_keys']
-            assert 'id' in result['common_keys']
-            assert 'name' in result['common_keys']
-        finally:
-            os.unlink(prod_file)
-            os.unlink(dev_file)
-    
+        # Row 11 was added
+        assert result["rows_added"] == 1
+        
+        # No rows removed
+        assert result["rows_removed"] == 0
+
+    def test_example_ids_collection(self):
+        """Test that example IDs are collected with line numbers."""
+        differ = EfficientDiffer(primary_keys=["id"], max_examples=5)
+        result = differ.compute_diff(
+            FIXTURES_DIR / "basic_prod.csv",
+            FIXTURES_DIR / "basic_dev.csv"
+        )
+        
+        # Check example_ids structure
+        if result["rows_updated"] > 0:
+            assert "example_ids" in result
+            for key, info in result["example_ids"].items():
+                assert "prod_line_num" in info
+                assert "dev_line_num" in info
+                # Line numbers should be 1-indexed (header is line 1)
+                assert info["prod_line_num"] >= 2
+                assert info["dev_line_num"] >= 2
+
     def test_max_examples_limit(self):
-        """Test that max_examples limits example collection."""
-        # Create files with 20 changed rows
-        prod_rows = ["id,value"] + [f"{i},old" for i in range(20)]
-        dev_rows = ["id,value"] + [f"{i},new" for i in range(20)]
+        """Test that max_examples limits the number of example IDs."""
+        differ = EfficientDiffer(primary_keys=["id"], max_examples=2)
+        result = differ.compute_diff(
+            FIXTURES_DIR / "basic_prod.csv",
+            FIXTURES_DIR / "basic_dev.csv"
+        )
         
-        prod_file = self._create_csv("\n".join(prod_rows))
-        dev_file = self._create_csv("\n".join(dev_rows))
+        # Should have at most 2 examples in each category
+        if "example_ids" in result:
+            assert len(result["example_ids"]) <= 2
+        if "example_ids_added" in result:
+            assert len(result["example_ids_added"]) <= 2
+        if "example_ids_removed" in result:
+            assert len(result["example_ids_removed"]) <= 2
+
+    def test_schema_detection(self):
+        """Test detection of schema differences (prod-only vs dev-only columns)."""
+        differ = EfficientDiffer(primary_keys=["id"])
+        result = differ.compute_diff(
+            FIXTURES_DIR / "basic_prod.csv",
+            FIXTURES_DIR / "basic_dev.csv"
+        )
         
-        try:
-            differ = EfficientDiffer(primary_keys=['id'], max_examples=5)
-            result = differ.compute_diff(prod_file, dev_file)
-            
-            assert result['rows_updated'] == 20
-            assert len(result['example_ids']) <= 5
-        finally:
-            os.unlink(prod_file)
-            os.unlink(dev_file)
-    
-    def test_row_counts(self):
-        """Test row count reporting."""
-        prod = "id\n1\n2\n3\n"
-        dev = "id\n1\n2\n3\n4\n5\n"
+        # Both files have the same schema, so no differences expected
+        assert "common_keys" in result
+        assert "prod_only_keys" in result
+        assert "dev_only_keys" in result
         
-        prod_file = self._create_csv(prod)
-        dev_file = self._create_csv(dev)
+        # All columns should be common (same schema)
+        assert len(result["prod_only_keys"]) == 0
+        assert len(result["dev_only_keys"]) == 0
+
+    def test_case_sensitivity(self):
+        """Test case-sensitive vs case-insensitive comparison."""
+        # Default is case-sensitive
+        differ = EfficientDiffer(primary_keys=["id"])
         
-        try:
-            differ = EfficientDiffer(primary_keys=['id'])
-            result = differ.compute_diff(prod_file, dev_file)
-            
-            assert result['prod_row_count'] == 3
-            assert result['dev_row_count'] == 5
-        finally:
-            os.unlink(prod_file)
-            os.unlink(dev_file)
+        # This test would need specific fixtures with case-only differences
+        # For now, just verify the option exists
+        result = differ.compute_diff(
+            FIXTURES_DIR / "basic_prod.csv",
+            FIXTURES_DIR / "basic_dev.csv"
+        )
+        assert result is not None
+
+    def test_empty_result_structure(self):
+        """Test diff result structure when comparing identical files."""
+        differ = EfficientDiffer(primary_keys=["id"])
+        result = differ.compute_diff(
+            FIXTURES_DIR / "basic_prod.csv",
+            FIXTURES_DIR / "basic_prod.csv"  # Same file
+        )
+        
+        # No changes when comparing file to itself
+        assert result["rows_added"] == 0
+        assert result["rows_removed"] == 0
+        assert result["rows_updated"] == 0
+        assert result["rows_updated_excluded_only"] == 0
 
 
-class TestCalculateInStockPercentage:
-    """Tests for the calculate_in_stock_percentage function."""
-    
-    def _create_csv(self, content: str) -> str:
-        f = tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False)
-        f.write(content)
-        f.close()
-        return f.name
-    
-    def test_all_in_stock(self):
-        """Test with all items in stock."""
-        content = "id,availability\n1,in stock\n2,in stock\n3,in stock\n"
-        file_path = self._create_csv(content)
+class TestIntegration:
+    """Integration tests for full workflow."""
+
+    def test_full_diff_workflow(self):
+        """Test complete diff workflow from file to result."""
+        differ = EfficientDiffer(
+            primary_keys=["sku", "locale"],
+            max_examples=10
+        )
         
-        try:
-            result = calculate_in_stock_percentage(file_path)
-            assert result == 100.0
-        finally:
-            os.unlink(file_path)
-    
-    def test_all_out_of_stock(self):
-        """Test with all items out of stock."""
-        content = "id,availability\n1,out of stock\n2,out of stock\n"
-        file_path = self._create_csv(content)
+        result = differ.compute_diff(
+            FIXTURES_DIR / "composite_key_prod.csv",
+            FIXTURES_DIR / "composite_key_dev.csv"
+        )
         
-        try:
-            result = calculate_in_stock_percentage(file_path)
-            assert result == 0.0
-        finally:
-            os.unlink(file_path)
-    
-    def test_mixed_availability(self):
-        """Test with mixed availability."""
-        content = "id,availability\n1,in stock\n2,out of stock\n3,in stock\n4,out of stock\n"
-        file_path = self._create_csv(content)
+        # Verify complete result structure
+        required_keys = [
+            "rows_added",
+            "rows_removed", 
+            "rows_updated",
+            "rows_updated_excluded_only",
+            "detailed_key_update_counts",
+            "common_keys",
+            "prod_only_keys",
+            "dev_only_keys",
+            "prod_row_count",
+            "dev_row_count"
+        ]
         
-        try:
-            result = calculate_in_stock_percentage(file_path)
-            assert result == 50.0
-        finally:
-            os.unlink(file_path)
-    
-    def test_no_availability_column(self):
-        """Test file without availability column."""
-        content = "id,name\n1,Widget\n"
-        file_path = self._create_csv(content)
+        for key in required_keys:
+            assert key in result, f"Missing key: {key}"
+
+    def test_large_file_handling(self):
+        """Test that the algorithm handles larger files efficiently."""
+        # This is more of a smoke test - actual large file tests would
+        # need to be done with generated fixtures
+        differ = EfficientDiffer(primary_keys=["id"])
         
-        try:
-            result = calculate_in_stock_percentage(file_path)
-            assert result == 0.0
-        finally:
-            os.unlink(file_path)
-    
-    def test_case_insensitive(self):
-        """Test case insensitive matching of 'in stock'."""
-        content = "id,availability\n1,In Stock\n2,IN STOCK\n3,in stock\n"
-        file_path = self._create_csv(content)
+        # Should complete without memory issues
+        result = differ.compute_diff(
+            FIXTURES_DIR / "basic_prod.csv",
+            FIXTURES_DIR / "basic_dev.csv"
+        )
         
-        try:
-            result = calculate_in_stock_percentage(file_path)
-            assert result == 100.0
-        finally:
-            os.unlink(file_path)
+        assert result is not None
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

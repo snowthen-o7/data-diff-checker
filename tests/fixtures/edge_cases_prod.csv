@@ -1,0 +1,14 @@
+id,name,description,price,notes
+1,"Simple Name","Regular description",19.99,normal
+2,"Name, With Comma","Description with ""quotes"" inside",29.99,"note, with, commas"
+3,"Unicode: café, naïve","Contains émojis: 🎉 and symbols: ™®©",39.99,special chars
+4,"Tabs	Inside","Contains	embedded	tabs",49.99,tabbed
+5,"Multiline
+Name","Description
+with
+newlines",59.99,multiline
+6,"  Whitespace  ","  Surrounding spaces  ",69.99," padded "
+7,"",Empty name field,79.99,blank name
+8,"Empty Description","",89.99,blank desc
+9,"HTML <script>alert('xss')</script>","Contains HTML & <entities>",99.99,html chars
+10,"Very Long Name That Goes On And On And Should Be Handled Properly Without Truncation Or Errors In The Comparison","Equally long description that tests the system's ability to handle verbose content without any issues whatsoever",109.99,long content

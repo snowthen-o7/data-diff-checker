@@ -1,0 +1,16 @@
+id,name,description,price,notes
+1,"Simple Name","Regular description updated",19.99,normal
+2,"Name, With Comma","Description with ""different quotes"" inside",29.99,"note, with, more, commas"
+3,"Unicode: café, naïve","Contains émojis: 🎊 and symbols: ™®©",39.99,special chars
+4,"Tabs	Inside","Contains	different	tabs",49.99,tabbed
+5,"Multiline
+Name","Description
+with
+more
+newlines",59.99,multiline changed
+6,"Whitespace","No surrounding spaces",69.99,trimmed
+7,"Now Has Name","Empty name field",79.99,filled name
+8,"Empty Description","Now has description",89.99,filled desc
+9,"HTML <script>alert('xss')</script>","Contains HTML & <different entities>",99.99,html chars
+10,"Short Name","Short desc",109.99,shortened
+11,"New Row","Added in dev",119.99,new

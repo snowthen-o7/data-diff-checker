@@ -1,0 +1,6 @@
+id,sku,title,price,availability,inventory,stock_fdx,last_inventory_check
+1,SKU-001,"Widget A",29.99,in_stock,100,150,2024-01-01
+2,SKU-002,"Widget B",39.99,in_stock,200,250,2024-01-01
+3,SKU-003,"Widget C",49.99,out_of_stock,0,0,2024-01-01
+4,SKU-004,"Widget D",59.99,limited,25,30,2024-01-01
+5,SKU-005,"Widget E",69.99,in_stock,500,600,2024-01-01

@@ -1,0 +1,11 @@
+id,sku,locale,title,price,availability,inventory,description
+1,SKU-001,en_US,"Widget Pro",29.99,in_stock,150,"A professional-grade widget for everyday use"
+2,SKU-002,en_US,"Gadget Basic",19.99,in_stock,200,"Entry-level gadget for beginners"
+3,SKU-003,en_US,"Super Gizmo",49.99,in_stock,75,"Premium gizmo with advanced features"
+4,SKU-004,en_US,"Mini Tool",9.99,in_stock,500,"Compact tool for small jobs"
+5,SKU-005,en_US,"Power Device",99.99,in_stock,25,"High-powered device for professionals"
+6,SKU-001,es_MX,"Widget Pro",599.00,in_stock,100,"Un widget de grado profesional"
+7,SKU-002,es_MX,"Gadget Basic",399.00,in_stock,150,"Gadget de nivel de entrada"
+8,SKU-006,en_US,"Classic Item",39.99,in_stock,80,"Timeless design that never goes out of style"
+9,SKU-007,en_US,"Deluxe Package",149.99,limited,10,"Complete package with all accessories"
+10,SKU-008,en_US,"Budget Option",4.99,in_stock,1000,"Affordable option for cost-conscious buyers"

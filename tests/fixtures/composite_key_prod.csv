@@ -1,0 +1,9 @@
+sku,locale,title,price,availability,inventory
+PROD-001,en_US,"English Widget",29.99,in_stock,100
+PROD-001,es_MX,"Widget Español",599.00,in_stock,80
+PROD-001,fr_FR,"Widget Français",27.99,in_stock,60
+PROD-002,en_US,"English Gadget",19.99,in_stock,200
+PROD-002,es_MX,"Gadget Español",399.00,in_stock,150
+PROD-003,en_US,"English Gizmo",49.99,limited,25
+PROD-003,de_DE,"Deutsches Gizmo",45.99,in_stock,30
+PROD-004,en_US,"Only English",99.99,in_stock,50
