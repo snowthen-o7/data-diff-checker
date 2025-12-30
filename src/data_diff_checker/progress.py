@@ -176,7 +176,7 @@ class ProgressDisplay:
         # Header with elapsed time
         elapsed = self._format_elapsed()
         header_fill = "─" * max(0, self.term_width - 40)
-        lines.append(f"┌─ Diaz Diff Checker ─ Elapsed: {elapsed} ─{header_fill}┐")
+        lines.append(f"┌─ Data Diff Checker ─ Elapsed: {elapsed} ─{header_fill}┐")
         
         # Progress bars
         fetch_bar = self._make_progress_bar(

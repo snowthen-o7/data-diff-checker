@@ -1,5 +1,5 @@
 """
-Comprehensive tests for Diaz Diff Checker.
+Comprehensive tests for Data Diff Checker.
 
 Run with: pytest tests/ -v
 """
@@ -8,7 +8,7 @@ import pytest
 import os
 from pathlib import Path
 
-from diaz_diff_checker import EfficientDiffer, StreamingCSVReader
+from data_diff_checker import EfficientDiffer, StreamingCSVReader
 
 
 # Get the fixtures directory

@@ -1,5 +1,5 @@
 """
-Main execution logic for Diaz Diff Checker.
+Main execution logic for Data Diff Checker.
 
 This module contains the primary run functions that orchestrate:
 - Local file comparison
@@ -118,7 +118,7 @@ async def run_folder_diff(
 ) -> None:
     """
     Batch process all prod/dev file pairs in a folder.
-    
+
     Args:
         folder_path: Directory containing response files
         differ: Configured EfficientDiffer instance
@@ -127,14 +127,14 @@ async def run_folder_diff(
         diff_rows: Optional row limit
     """
     logging.info(f"Running folder diff mode on: {folder_path}")
-    
+
     os.makedirs(summary_dir, exist_ok=True)
     run_start_time = datetime.now()
-    
+
     # Find file pairs
     pattern = re.compile(r"^(prod|dev)_response_(\d+)_(\w+)\.txt$")
     files = os.listdir(folder_path)
-    
+
     groups: Dict[str, Dict[str, str]] = {}
     for filename in files:
         match = pattern.match(filename)
@@ -143,35 +143,79 @@ async def run_folder_diff(
             test_case = match.group(2)
             file_hash = match.group(3)
             key = f"{test_case}_{file_hash}"
-            
+
             if key not in groups:
                 groups[key] = {}
             groups[key][env] = os.path.join(folder_path, filename)
-    
+
     if not groups:
         logging.error("No matching file pairs found in folder")
         return
-    
-    logging.info(f"Found {len(groups)} file pairs to process")
-    
-    async def process_folder_diff(key: str, env_files: Dict[str, str]) -> Dict[str, Any]:
+
+    total_diffs = len(groups)
+    logging.info(f"Found {total_diffs} file pairs to process")
+
+    # Initialize progress display (no fetches in folder mode, only diffs)
+    progress = ProgressDisplay(total_fetches=0, total_diffs=total_diffs)
+    progress.initial_draw()
+
+    async def process_folder_diff(key: str, env_files: Dict[str, str]) -> OrderedDict[str, Any]:
         """Process a single file pair."""
         test_case = key.split("_")[0]
         diff_start_time = datetime.now()
-        
-        test_summary: Dict[str, Any] = {"test_case": test_case}
-        
+
         if "prod" not in env_files or "dev" not in env_files:
+            test_summary: OrderedDict[str, Any] = OrderedDict()
+            test_summary["test_case"] = test_case
             test_summary["error"] = {"msg": "Missing prod or dev file"}
             test_summary["non_200"] = True
+            progress.increment_errors()
+            progress.log(f"[Test {test_case}] Missing prod or dev file")
             return test_summary
-        
+
+        progress.log(f"[Test {test_case}] Starting diff...")
+
         try:
             diff_stats = await asyncio.to_thread(
                 differ.compute_diff, env_files["prod"], env_files["dev"]
             )
-            test_summary.update(diff_stats)
-            
+
+            # Calculate diff percentage
+            rows_added = diff_stats.get("rows_added", 0)
+            rows_removed = diff_stats.get("rows_removed", 0)
+            rows_updated = diff_stats.get("rows_updated", 0)
+            prod_row_count = diff_stats.get("prod_row_count", 0)
+            dev_row_count = diff_stats.get("dev_row_count", 0)
+
+            total_changes = rows_added + rows_removed + rows_updated
+            max_rows = max(prod_row_count, dev_row_count, 1)  # Avoid division by zero
+            diff_percentage = round((total_changes / max_rows) * 100, 2)
+
+            # Build ordered summary with desired key order
+            test_summary: OrderedDict[str, Any] = OrderedDict()
+            test_summary["test_case"] = test_case
+            test_summary["diff_percentage"] = diff_percentage
+            test_summary["prod_row_count"] = prod_row_count
+            test_summary["dev_row_count"] = dev_row_count
+            test_summary["rows_added"] = rows_added
+            test_summary["rows_removed"] = rows_removed
+            test_summary["rows_updated"] = rows_updated
+            test_summary["rows_updated_excluded_only"] = diff_stats.get("rows_updated_excluded_only", 0)
+            test_summary["detailed_key_update_counts"] = diff_stats.get("detailed_key_update_counts", {})
+
+            # Add example IDs if present
+            if "example_ids" in diff_stats:
+                test_summary["example_ids"] = diff_stats["example_ids"]
+            if "example_ids_added" in diff_stats:
+                test_summary["example_ids_added"] = diff_stats["example_ids_added"]
+            if "example_ids_removed" in diff_stats:
+                test_summary["example_ids_removed"] = diff_stats["example_ids_removed"]
+
+            # Add schema info
+            test_summary["common_keys"] = diff_stats.get("common_keys", [])
+            test_summary["prod_only_keys"] = diff_stats.get("prod_only_keys", [])
+            test_summary["dev_only_keys"] = diff_stats.get("dev_only_keys", [])
+
             # Calculate in-stock percentages
             async def calc_in_stock(file_path):
                 reader = StreamingCSVReader(file_path, max_rows=diff_rows)
@@ -180,64 +224,121 @@ async def run_folder_diff(
                         calculate_in_stock_percentage, file_path, diff_rows
                     )
                 return None
-            
+
             prod_in_stock, dev_in_stock = await asyncio.gather(
                 calc_in_stock(env_files["prod"]),
                 calc_in_stock(env_files["dev"])
             )
-            
+
             if prod_in_stock is not None:
                 test_summary["prod_in_stock_percentage"] = prod_in_stock
             if dev_in_stock is not None:
                 test_summary["dev_in_stock_percentage"] = dev_in_stock
-            
+
             if prod_in_stock is not None and dev_in_stock is not None:
                 test_summary["in_stock_percentage_difference"] = round(
                     abs(prod_in_stock - dev_in_stock), 2
                 )
-            
+
             diff_duration = (datetime.now() - diff_start_time).total_seconds()
             test_summary["runtime_seconds"] = round(diff_duration, 2)
-            
-            logging.info(f"  [Test {test_case}] ✓ Diff completed in {diff_duration:.2f}s")
-            
+
+            # Log diff results
+            if rows_updated > 0 or rows_added > 0 or rows_removed > 0:
+                progress.log(
+                    f"[Test {test_case}] +{rows_added} added, "
+                    f"-{rows_removed} removed, ~{rows_updated} changed ({diff_percentage}%)"
+                )
+            else:
+                progress.log(f"[Test {test_case}] No differences")
+
         except Exception as e:
-            logging.error(f"  [Test {test_case}] ✗ Error: {e}")
+            progress.log(f"[Test {test_case}] Error: {e}")
+            progress.increment_errors()
+            test_summary = OrderedDict()
+            test_summary["test_case"] = test_case
             test_summary["error"] = {"msg": str(e)}
             test_summary["non_200"] = True
             diff_duration = (datetime.now() - diff_start_time).total_seconds()
             test_summary["runtime_seconds"] = round(diff_duration, 2)
-        
+
+        progress.increment_diffs()
         return test_summary
-    
+
     # Process with semaphore
     semaphore = asyncio.Semaphore(max_concurrent_diffs)
-    
+
     async def bounded_diff(key, env_files):
         async with semaphore:
             return await process_folder_diff(key, env_files)
-    
+
     tasks = [bounded_diff(key, env_files) for key, env_files in groups.items()]
     results = await asyncio.gather(*tasks)
-    
+
+    # Clear progress display
+    progress.finish()
+
     # Sort by test case
     results.sort(key=lambda x: int(x.get("test_case", 0)))
-    
+
     total_runtime = (datetime.now() - run_start_time).total_seconds()
-    
-    overall_summary = create_summary_structure(
-        count=len(results),
-        runtime_seconds=total_runtime,
-        test_cases=results,
-    )
-    
+
+    # Build overall summary
+    overall_summary: OrderedDict[str, Any] = OrderedDict()
+    overall_summary["count"] = len(results)
+    overall_summary["folder"] = os.path.basename(folder_path)
+    overall_summary["total_runtime_seconds"] = round(total_runtime, 2)
+    overall_summary["test_cases"] = results
+
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    summary_filename = os.path.join(summary_dir, f"folder_diffs_summary_{timestamp}.json")
-    with open(summary_filename, "w") as f:
+
+    # Write overall summary (general)
+    overall_filename = os.path.join(summary_dir, f"folder_diffs_summary_{timestamp}.json")
+    with open(overall_filename, "w") as f:
         json.dump(overall_summary, f, indent=2)
-    
-    logging.info(f"Summary written to {summary_filename}")
+    logging.info(f"Summary written to {overall_filename}")
+
+    # Write updates summary (only rows with changes)
+    updates_summary: OrderedDict[str, Any] = OrderedDict()
+    updates_summary["count"] = 0
+    updates_summary["folder"] = os.path.basename(folder_path)
+    updates_summary["total_runtime_seconds"] = round(total_runtime, 2)
+    updates_summary["test_cases"] = []
+
+    # Write errors summary
+    errors_summary: OrderedDict[str, Any] = OrderedDict()
+    errors_summary["count"] = 0
+    errors_summary["folder"] = os.path.basename(folder_path)
+    errors_summary["total_runtime_seconds"] = round(total_runtime, 2)
+    errors_summary["test_cases"] = []
+
+    for test in results:
+        if test.get("non_200") or test.get("error"):
+            errors_summary["test_cases"].append(test)
+        elif (test.get("rows_added", 0) > 0 or
+              test.get("rows_removed", 0) > 0 or
+              test.get("rows_updated", 0) > 0):
+            updates_summary["test_cases"].append(test)
+
+    updates_summary["count"] = len(updates_summary["test_cases"])
+    updates_filename = os.path.join(summary_dir, f"folder_diffs_summary_updates_{timestamp}.json")
+    with open(updates_filename, "w") as f:
+        json.dump(updates_summary, f, indent=2)
+    logging.info(f"Updates summary written to {updates_filename}")
+
+    errors_summary["count"] = len(errors_summary["test_cases"])
+    errors_filename = os.path.join(summary_dir, f"folder_diffs_summary_errors_{timestamp}.json")
+    with open(errors_filename, "w") as f:
+        json.dump(errors_summary, f, indent=2)
+    logging.info(f"Errors summary written to {errors_filename}")
+
+    logging.info(f"\n{'='*60}")
+    logging.info(f"Folder diff complete!")
     logging.info(f"Total runtime: {total_runtime:.2f}s")
+    logging.info(f"Total test cases: {len(results)}")
+    logging.info(f"Test cases with changes: {updates_summary['count']}")
+    logging.info(f"Test cases with errors: {errors_summary['count']}")
+    logging.info(f"{'='*60}")
 
 
 async def fetch_and_save(
@@ -461,26 +562,26 @@ async def run_url_mode(
     prod_base_url = args.prod_url
     dev_base_url = args.dev_url
     
-    async def process_diff(test_case: int, prod_info: Dict[str, Any], dev_info: Dict[str, Any]) -> Dict[str, Any]:
+    async def process_diff(test_case: int, prod_info: Dict[str, Any], dev_info: Dict[str, Any]) -> OrderedDict[str, Any]:
         """Process a single diff - runs in thread pool for CPU-bound work."""
         async with diff_semaphore:
             progress.log(f"[Test {test_case}] Starting diff...")
-            
-            test_summary: Dict[str, Any] = {"test_case": test_case}
-            test_summary["prod_status"] = prod_info.get("status")
-            test_summary["dev_status"] = dev_info.get("status")
-            
-            shop_name = prod_info.get("shop_name") or dev_info.get("shop_name")
-            if shop_name:
-                test_summary["shop_name"] = shop_name
-            
-            # Include request parameters
-            request_params = prod_info.get("request_params") or dev_info.get("request_params")
-            if request_params:
-                test_summary["request_params"] = request_params
-            
-            # Check for non-200 responses
+
+            # Check for non-200 responses first
             if prod_info.get("status") != 200 or dev_info.get("status") != 200:
+                test_summary: OrderedDict[str, Any] = OrderedDict()
+                test_summary["test_case"] = test_case
+                test_summary["prod_status"] = prod_info.get("status")
+                test_summary["dev_status"] = dev_info.get("status")
+
+                shop_name = prod_info.get("shop_name") or dev_info.get("shop_name")
+                if shop_name:
+                    test_summary["shop_name"] = shop_name
+
+                request_params = prod_info.get("request_params") or dev_info.get("request_params")
+                if request_params:
+                    test_summary["request_params"] = request_params
+
                 error_obj: Dict[str, Any] = {"msg": "Non-200 responses detected", "response": {}}
                 if prod_info.get("status") != 200:
                     error_obj["response"]["prod"] = {
@@ -496,31 +597,71 @@ async def run_url_mode(
                 test_summary["non_200"] = True
                 progress.increment_errors()
                 return test_summary
-            
+
             # Perform diff in thread pool
             try:
                 start_time = datetime.now()
-                
+
                 diff_stats = await asyncio.to_thread(
                     differ.compute_diff, prod_info["file"], dev_info["file"]
                 )
-                
-                diff_duration = (datetime.now() - start_time).total_seconds()
-                test_summary.update(diff_stats)
-                
-                # Log diff results
-                rows_changed = diff_stats.get("rows_updated", 0)
+
+                # Calculate diff percentage
                 rows_added = diff_stats.get("rows_added", 0)
                 rows_removed = diff_stats.get("rows_removed", 0)
-                
-                if rows_changed > 0 or rows_added > 0 or rows_removed > 0:
+                rows_updated = diff_stats.get("rows_updated", 0)
+                prod_row_count = diff_stats.get("prod_row_count", 0)
+                dev_row_count = diff_stats.get("dev_row_count", 0)
+
+                total_changes = rows_added + rows_removed + rows_updated
+                max_rows = max(prod_row_count, dev_row_count, 1)  # Avoid division by zero
+                diff_percentage = round((total_changes / max_rows) * 100, 2)
+
+                # Build ordered summary with desired key order
+                test_summary: OrderedDict[str, Any] = OrderedDict()
+                test_summary["test_case"] = test_case
+                test_summary["diff_percentage"] = diff_percentage
+                test_summary["prod_row_count"] = prod_row_count
+                test_summary["dev_row_count"] = dev_row_count
+                test_summary["prod_status"] = prod_info.get("status")
+                test_summary["dev_status"] = dev_info.get("status")
+
+                shop_name = prod_info.get("shop_name") or dev_info.get("shop_name")
+                if shop_name:
+                    test_summary["shop_name"] = shop_name
+
+                request_params = prod_info.get("request_params") or dev_info.get("request_params")
+                if request_params:
+                    test_summary["request_params"] = request_params
+
+                test_summary["rows_added"] = rows_added
+                test_summary["rows_removed"] = rows_removed
+                test_summary["rows_updated"] = rows_updated
+                test_summary["rows_updated_excluded_only"] = diff_stats.get("rows_updated_excluded_only", 0)
+                test_summary["detailed_key_update_counts"] = diff_stats.get("detailed_key_update_counts", {})
+
+                # Add example IDs if present
+                if "example_ids" in diff_stats:
+                    test_summary["example_ids"] = diff_stats["example_ids"]
+                if "example_ids_added" in diff_stats:
+                    test_summary["example_ids_added"] = diff_stats["example_ids_added"]
+                if "example_ids_removed" in diff_stats:
+                    test_summary["example_ids_removed"] = diff_stats["example_ids_removed"]
+
+                # Add schema info
+                test_summary["common_keys"] = diff_stats.get("common_keys", [])
+                test_summary["prod_only_keys"] = diff_stats.get("prod_only_keys", [])
+                test_summary["dev_only_keys"] = diff_stats.get("dev_only_keys", [])
+
+                # Log diff results
+                if rows_updated > 0 or rows_added > 0 or rows_removed > 0:
                     progress.log(
                         f"[Test {test_case}] +{rows_added} added, "
-                        f"-{rows_removed} removed, ~{rows_changed} changed"
+                        f"-{rows_removed} removed, ~{rows_updated} changed ({diff_percentage}%)"
                     )
                 else:
                     progress.log(f"[Test {test_case}] No differences")
-                
+
                 # Calculate in-stock percentages
                 async def calc_in_stock(file_path):
                     reader = StreamingCSVReader(file_path, max_rows=args.diff_rows)
@@ -529,34 +670,38 @@ async def run_url_mode(
                             calculate_in_stock_percentage, file_path, args.diff_rows
                         )
                     return None
-                
+
                 prod_in_stock, dev_in_stock = await asyncio.gather(
                     calc_in_stock(prod_info["file"]),
                     calc_in_stock(dev_info["file"])
                 )
-                
+
                 if prod_in_stock is not None:
                     test_summary["prod_in_stock_percentage"] = prod_in_stock
                 if dev_in_stock is not None:
                     test_summary["dev_in_stock_percentage"] = dev_in_stock
-                
+
                 if prod_in_stock is not None and dev_in_stock is not None:
                     test_summary["in_stock_percentage_difference"] = round(
                         abs(prod_in_stock - dev_in_stock), 2
                     )
-                
+
                 # Add runtime
                 total_test_duration = (datetime.now() - start_time).total_seconds()
                 test_summary["runtime_seconds"] = round(total_test_duration, 2)
-                
+
             except Exception as e:
                 progress.log(f"[Test {test_case}] ✗ Error: {str(e)}")
                 progress.increment_errors()
+                test_summary = OrderedDict()
+                test_summary["test_case"] = test_case
+                test_summary["prod_status"] = prod_info.get("status")
+                test_summary["dev_status"] = dev_info.get("status")
                 test_summary["error"] = {"msg": str(e)}
                 test_summary["non_200"] = True
                 error_duration = (datetime.now() - start_time).total_seconds()
                 test_summary["runtime_seconds"] = round(error_duration, 2)
-            
+
             return test_summary
     
     async def on_diff_complete(task: asyncio.Task, test_case: int):
@@ -808,7 +953,7 @@ async def _async_main(args) -> None:
         logging.error(
             "URL mode requires --prod-url and --dev-url.\n"
             "Example:\n"
-            "  diaz-diff --params-file tests.csv \\\n"
+            "  data-diff --params-file tests.csv \\\n"
             "    --prod-url 'https://api.prod.example.com/endpoint' \\\n"
             "    --dev-url 'https://api.dev.example.com/endpoint'"
         )

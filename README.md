@@ -1,4 +1,4 @@
-# Diaz Diff Checker
+# Data Diff Checker
 
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -7,12 +7,12 @@ A memory-optimized CSV diff tool with streaming processing for comparing large d
 
 ```
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║   ██████╗ ██╗ █████╗ ███████╗    ██████╗ ██╗███████╗███████╗                 ║
-║   ██╔══██╗██║██╔══██╗╚══███╔╝    ██╔══██╗██║██╔════╝██╔════╝                 ║
-║   ██║  ██║██║███████║  ███╔╝     ██║  ██║██║█████╗  █████╗                   ║
-║   ██║  ██║██║██╔══██║ ███╔╝      ██║  ██║██║██╔══╝  ██╔══╝                   ║
-║   ██████╔╝██║██║  ██║███████╗    ██████╔╝██║██║     ██║                      ║
-║   ╚═════╝ ╚═╝╚═╝  ╚═╝╚══════╝    ╚═════╝ ╚═╝╚═╝     ╚═╝                      ║
+║   ██████╗  █████╗ ████████╗ █████╗     ██████╗ ██╗███████╗███████╗           ║
+║   ██╔══██╗██╔══██╗╚══██╔══╝██╔══██╗    ██╔══██╗██║██╔════╝██╔════╝           ║
+║   ██║  ██║███████║   ██║   ███████║    ██║  ██║██║█████╗  █████╗             ║
+║   ██║  ██║██╔══██║   ██║   ██╔══██║    ██║  ██║██║██╔══╝  ██╔══╝             ║
+║   ██████╔╝██║  ██║   ██║   ██║  ██║    ██████╔╝██║██║     ██║                ║
+║   ╚═════╝ ╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝    ╚═════╝ ╚═╝╚═╝     ╚═╝                ║
 ║            ██████╗██╗  ██╗███████╗ ██████╗██╗  ██╗███████╗██████╗            ║
 ║           ██╔════╝██║  ██║██╔════╝██╔════╝██║ ██╔╝██╔════╝██╔══██╗           ║
 ║           ██║     ███████║█████╗  ██║     █████╔╝ █████╗  ██████╔╝           ║
@@ -37,8 +37,8 @@ A memory-optimized CSV diff tool with streaming processing for comparing large d
 
 ```bash
 # Clone the repository
-git clone https://github.com/snowthen-o7/diaz-diff-checker.git
-cd diaz-diff-checker
+git clone https://github.com/snowthen-o7/data-diff-checker.git
+cd data-diff-checker
 
 # Upgrade pip first (required for editable installs with pyproject.toml)
 pip3 install --upgrade pip
@@ -59,28 +59,28 @@ After installation, you can run the tool in several ways:
 
 ```bash
 # Option 1: Direct command (if ~/.local/bin is in your PATH)
-diaz-diff --help
+data-diff --help
 
 # Option 2: Run as a Python module (always works)
-python3 -m diaz_diff_checker --help
+python3 -m data_diff_checker --help
 ```
 
-If `diaz-diff` gives "command not found", either:
+If `data-diff` gives "command not found", either:
 - Add `~/.local/bin` to your PATH: `export PATH="$HOME/.local/bin:$PATH"` (add to `~/.zshrc` or `~/.bashrc`)
-- Or just use `python3 -m diaz_diff_checker` instead
+- Or just use `python3 -m data_diff_checker` instead
 
 ### Updating
 
 If you installed in editable mode (`pip3 install -e .`):
 ```bash
-cd diaz-diff-checker
+cd data-diff-checker
 git pull
 # Changes are immediately available - no reinstall needed!
 ```
 
 If you installed normally (`pip3 install .`):
 ```bash
-cd diaz-diff-checker
+cd data-diff-checker
 git pull
 pip3 install .  # Reinstall after pulling
 ```
@@ -90,25 +90,25 @@ pip3 install .  # Reinstall after pulling
 ### Compare two local CSV files
 
 ```bash
-python3 -m diaz_diff_checker --local-prod production.csv --local-dev development.csv
+python3 -m data_diff_checker --local-prod production.csv --local-dev development.csv
 ```
 
 ### Use a composite primary key
 
 ```bash
-python3 -m diaz_diff_checker --local-prod prod.csv --local-dev dev.csv --primary-key "sku,locale"
+python3 -m data_diff_checker --local-prod prod.csv --local-dev dev.csv --primary-key "sku,locale"
 ```
 
 ### Batch process a folder of file pairs
 
 ```bash
-python3 -m diaz_diff_checker --local-folder ./responses/
+python3 -m data_diff_checker --local-folder ./responses/
 ```
 
 ### Quick test with row limit
 
 ```bash
-python3 -m diaz_diff_checker --local-prod large_prod.csv --local-dev large_dev.csv --diff-rows 1000
+python3 -m data_diff_checker --local-prod large_prod.csv --local-dev large_dev.csv --diff-rows 1000
 ```
 
 ## Usage
@@ -119,21 +119,21 @@ python3 -m diaz_diff_checker --local-prod large_prod.csv --local-dev large_dev.c
 Compare two CSV files directly:
 
 ```bash
-python3 -m diaz_diff_checker --local-prod baseline.csv --local-dev compare.csv
+python3 -m data_diff_checker --local-prod baseline.csv --local-dev compare.csv
 ```
 
 #### 2. Folder Mode  
 Batch process file pairs matching the pattern `prod_response_<N>_<hash>.txt` and `dev_response_<N>_<hash>.txt`:
 
 ```bash
-python3 -m diaz_diff_checker --local-folder ./test_responses/
+python3 -m data_diff_checker --local-folder ./test_responses/
 ```
 
 #### 3. URL Mode
 Fetch and compare CSV responses from APIs:
 
 ```bash
-python3 -m diaz_diff_checker --params-file test_cases.csv \
+python3 -m data_diff_checker --params-file test_cases.csv \
   --prod-url "https://api.prod.example.com/endpoint" \
   --dev-url "https://api.dev.example.com/endpoint"
 ```
@@ -241,7 +241,7 @@ summaries/
 
 ## Memory Optimizations
 
-Diaz Diff Checker is designed to handle large files efficiently:
+Data Diff Checker is designed to handle large files efficiently:
 
 - **Streaming I/O**: Rows are processed one at a time, never loading entire files
 - **Hash-based comparison**: Stores MD5 hashes instead of full row data
@@ -252,7 +252,7 @@ Diaz Diff Checker is designed to handle large files efficiently:
 ## Python API
 
 ```python
-from diaz_diff_checker import StreamingCSVReader, EfficientDiffer
+from data_diff_checker import StreamingCSVReader, EfficientDiffer
 
 # Read CSV with automatic format detection
 reader = StreamingCSVReader("data.csv")
@@ -280,7 +280,7 @@ Changes to these columns are tracked separately in `rows_updated_excluded_only`.
 ### Customizing via Code
 
 ```python
-from diaz_diff_checker import EfficientDiffer
+from data_diff_checker import EfficientDiffer
 
 differ = EfficientDiffer(
     primary_keys=["sku", "locale"],
@@ -292,7 +292,7 @@ differ = EfficientDiffer(
 
 ### Local Configuration File
 
-Create a `.diaz-diff.json` file in your project directory to set defaults (this file is gitignored):
+Create a `.data-diff.json` file in your project directory to set defaults (this file is gitignored):
 
 ```json
 {
@@ -305,18 +305,18 @@ Create a `.diaz-diff.json` file in your project directory to set defaults (this 
 With this config, you can run URL mode without specifying URLs every time:
 
 ```bash
-python3 -m diaz_diff_checker --params-file test_cases.csv
+python3 -m data_diff_checker --params-file test_cases.csv
 ```
 
-The tool searches for `.diaz-diff.json` in the current directory and parent directories (up to your home directory).
+The tool searches for `.data-diff.json` in the current directory and parent directories (up to your home directory).
 
 ## Development
 
 ### Setup
 
 ```bash
-git clone https://github.com/snowthen-o7/diaz-diff-checker.git
-cd diaz-diff-checker
+git clone https://github.com/snowthen-o7/data-diff-checker.git
+cd data-diff-checker
 pip3 install --upgrade pip
 pip3 install -e ".[dev]"
 ```

@@ -1,1 +1,1 @@
-"""Tests for Diaz Diff Checker."""
+"""Tests for Data Diff Checker."""

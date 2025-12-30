@@ -3,7 +3,7 @@
 import os
 import tempfile
 import pytest
-from diaz_diff_checker.csv_reader import StreamingCSVReader
+from data_diff_checker.csv_reader import StreamingCSVReader
 
 
 class TestStreamingCSVReader:

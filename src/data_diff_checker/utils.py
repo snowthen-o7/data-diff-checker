@@ -1,5 +1,5 @@
 """
-Utility functions for Diaz Diff Checker.
+Utility functions for Data Diff Checker.
 
 Includes URL parameter parsing, file naming, and other helper functions.
 """

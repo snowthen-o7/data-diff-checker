@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "diaz-diff-checker"
+name = "data-diff-checker"
 version = "1.0.0"
 description = "Memory-optimized CSV diff tool with streaming processing"
 readme = "README.md"
@@ -51,20 +51,20 @@ dev = [
     "mypy>=1.0.0",
 ]
 all = [
-    "diaz-diff-checker[dev]",
+    "data-diff-checker[dev]",
 ]
 
 [project.scripts]
-diaz-diff = "diaz_diff_checker.cli:main"
+data-diff = "data_diff_checker.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/yourusername/diaz-diff-checker"
-Documentation = "https://github.com/yourusername/diaz-diff-checker#readme"
-Repository = "https://github.com/yourusername/diaz-diff-checker.git"
-Issues = "https://github.com/yourusername/diaz-diff-checker/issues"
+Homepage = "https://github.com/yourusername/data-diff-checker"
+Documentation = "https://github.com/yourusername/data-diff-checker#readme"
+Repository = "https://github.com/yourusername/data-diff-checker.git"
+Issues = "https://github.com/yourusername/data-diff-checker/issues"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/diaz_diff_checker"]
+packages = ["src/data_diff_checker"]
 
 [tool.hatch.build.targets.sdist]
 include = [

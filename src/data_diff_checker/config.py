@@ -1,8 +1,8 @@
 """
-Configuration and constants for Diaz Diff Checker.
+Configuration and constants for Data Diff Checker.
 
 All configurable values are centralized here for easy customization.
-Users can create a local config file (.diaz-diff.json) to override defaults.
+Users can create a local config file (.data-diff.json) to override defaults.
 """
 
 import json
@@ -42,7 +42,7 @@ EXCLUDED_COLUMN_PATTERNS: List[str] = [
 ]
 
 # Local config file name (should be gitignored)
-LOCAL_CONFIG_FILENAME: str = ".diaz-diff.json"
+LOCAL_CONFIG_FILENAME: str = ".data-diff.json"
 
 
 def find_local_config() -> Optional[Path]:
@@ -68,7 +68,7 @@ def find_local_config() -> Optional[Path]:
 
 def load_local_config() -> Dict[str, Any]:
     """
-    Load configuration from local .diaz-diff.json file.
+    Load configuration from local .data-diff.json file.
     
     Returns:
         Dictionary of configuration values, empty dict if no config found

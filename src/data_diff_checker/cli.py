@@ -1,5 +1,5 @@
 """
-Command-line interface for Diaz Diff Checker.
+Command-line interface for Data Diff Checker.
 
 Provides argument parsing and CLI entry point.
 """
@@ -154,7 +154,7 @@ def create_parser() -> argparse.ArgumentParser:
 """
     
     parser = argparse.ArgumentParser(
-        prog='diaz-diff',
+        prog='data-diff',
         description=description,
         epilog=epilog,
         formatter_class=CustomHelpFormatter,
