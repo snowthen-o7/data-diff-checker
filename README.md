@@ -287,8 +287,21 @@ differ = EfficientDiffer(
     max_examples=20,
     max_rows=10000,  # Limit for testing
     excluded_patterns=["inventory", "stock", "qty"],
+    case_sensitive=True,  # Set to False to ignore case differences
+    trim_whitespace=True,  # Set to False to preserve leading/trailing spaces
 )
 ```
+
+### Comparison Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `primary_keys` | Required | Column(s) that uniquely identify rows |
+| `max_examples` | 10 | Maximum example IDs to collect per change type |
+| `max_rows` | None | Limit rows processed per file (for testing large files) |
+| `excluded_patterns` | `["inventory", "availability", "_fdx"]` | Column patterns excluded from meaningful changes |
+| `case_sensitive` | `True` | Whether to treat "ABC" and "abc" as different |
+| `trim_whitespace` | `True` | Whether to ignore leading/trailing whitespace |
 
 ### Local Configuration File
 
@@ -355,6 +368,10 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Changelog
+
+### 1.1.0 (2025)
+- Added `case_sensitive` option for case-insensitive comparison
+- Added `trim_whitespace` option to control whitespace handling
 
 ### 1.0.0 (2025)
 - Initial public release

@@ -62,6 +62,45 @@ class TestStreamingCSVReader:
 class TestEfficientDiffer:
     """Tests for the diff algorithm."""
 
+    def test_missing_primary_key_error(self):
+        """Test that missing primary key raises ValueError."""
+        differ = EfficientDiffer(primary_keys=["nonexistent_column"])
+
+        with pytest.raises(ValueError) as exc_info:
+            differ.compute_diff(
+                FIXTURES_DIR / "basic_prod.csv",
+                FIXTURES_DIR / "basic_dev.csv"
+            )
+
+        assert "not found" in str(exc_info.value).lower()
+        assert "nonexistent_column" in str(exc_info.value)
+
+    def test_empty_csv_handling(self):
+        """Test handling of empty CSV files (header only)."""
+        import tempfile
+
+        # Create temporary empty CSV files
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as prod_f:
+            prod_f.write("id,name,price\n")
+            prod_path = prod_f.name
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as dev_f:
+            dev_f.write("id,name,price\n")
+            dev_path = dev_f.name
+
+        try:
+            differ = EfficientDiffer(primary_keys=["id"])
+            result = differ.compute_diff(prod_path, dev_path)
+
+            assert result["rows_added"] == 0
+            assert result["rows_removed"] == 0
+            assert result["rows_updated"] == 0
+            assert result["prod_row_count"] == 0
+            assert result["dev_row_count"] == 0
+        finally:
+            os.unlink(prod_path)
+            os.unlink(dev_path)
+
     def test_basic_diff(self):
         """Test basic diff with simple primary key."""
         differ = EfficientDiffer(primary_keys=["id"])
@@ -213,16 +252,61 @@ class TestEfficientDiffer:
 
     def test_case_sensitivity(self):
         """Test case-sensitive vs case-insensitive comparison."""
-        # Default is case-sensitive
-        differ = EfficientDiffer(primary_keys=["id"])
-        
-        # This test would need specific fixtures with case-only differences
-        # For now, just verify the option exists
-        result = differ.compute_diff(
-            FIXTURES_DIR / "basic_prod.csv",
-            FIXTURES_DIR / "basic_dev.csv"
-        )
-        assert result is not None
+        import tempfile
+
+        # Create test files with case-only differences
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as prod_f:
+            prod_f.write("id,name\n")
+            prod_f.write("1,Alice\n")
+            prod_path = prod_f.name
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as dev_f:
+            dev_f.write("id,name\n")
+            dev_f.write("1,ALICE\n")
+            dev_path = dev_f.name
+
+        try:
+            # Case-sensitive (default) should detect change
+            differ_sensitive = EfficientDiffer(primary_keys=["id"], case_sensitive=True)
+            result_sensitive = differ_sensitive.compute_diff(prod_path, dev_path)
+            assert result_sensitive["rows_updated"] == 1
+
+            # Case-insensitive should NOT detect change
+            differ_insensitive = EfficientDiffer(primary_keys=["id"], case_sensitive=False)
+            result_insensitive = differ_insensitive.compute_diff(prod_path, dev_path)
+            assert result_insensitive["rows_updated"] == 0
+        finally:
+            os.unlink(prod_path)
+            os.unlink(dev_path)
+
+    def test_whitespace_trimming(self):
+        """Test whitespace trimming option."""
+        import tempfile
+
+        # Create test files with whitespace-only differences
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as prod_f:
+            prod_f.write("id,name\n")
+            prod_f.write("1,Alice\n")
+            prod_path = prod_f.name
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as dev_f:
+            dev_f.write("id,name\n")
+            dev_f.write("1,  Alice  \n")
+            dev_path = dev_f.name
+
+        try:
+            # With trimming (default) should NOT detect change
+            differ_trim = EfficientDiffer(primary_keys=["id"], trim_whitespace=True)
+            result_trim = differ_trim.compute_diff(prod_path, dev_path)
+            assert result_trim["rows_updated"] == 0
+
+            # Without trimming should detect change
+            differ_no_trim = EfficientDiffer(primary_keys=["id"], trim_whitespace=False)
+            result_no_trim = differ_no_trim.compute_diff(prod_path, dev_path)
+            assert result_no_trim["rows_updated"] == 1
+        finally:
+            os.unlink(prod_path)
+            os.unlink(dev_path)
 
     def test_empty_result_structure(self):
         """Test diff result structure when comparing identical files."""

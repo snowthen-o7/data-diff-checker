@@ -36,16 +36,16 @@ class TestStreamingCSVReader:
             f.write("id\tname\tprice\n")
             f.write("1\tWidget\t9.99\n")
             f.name
-        
+
         try:
             reader = StreamingCSVReader(f.name)
             assert reader.detected_delimiter == '\t'
-            
+
             rows = list(reader.iterate_rows())
             assert rows[0]['name'] == 'Widget'
         finally:
             os.unlink(f.name)
-    
+
     def test_max_rows_limit(self):
         """Test row limiting."""
         with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as f:

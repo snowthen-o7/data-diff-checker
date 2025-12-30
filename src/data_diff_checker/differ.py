@@ -44,6 +44,8 @@ class EfficientDiffer:
         max_examples: Maximum example IDs to collect for each change type
         max_rows: Optional limit on rows to process per file
         excluded_patterns: Column name patterns to exclude from "meaningful" changes
+        case_sensitive: Whether to perform case-sensitive comparison (default True)
+        trim_whitespace: Whether to trim whitespace before comparison (default True)
     """
     
     def __init__(
@@ -52,16 +54,29 @@ class EfficientDiffer:
         max_examples: int = DEFAULT_MAX_EXAMPLES,
         max_rows: Optional[int] = None,
         excluded_patterns: Optional[List[str]] = None,
+        case_sensitive: bool = True,
+        trim_whitespace: bool = True,
     ):
         self.primary_keys = primary_keys
         self.max_examples = max_examples
         self.max_rows = max_rows
         self.excluded_patterns = excluded_patterns or EXCLUDED_COLUMN_PATTERNS
+        self.case_sensitive = case_sensitive
+        self.trim_whitespace = trim_whitespace
     
     def _is_excluded_column(self, column_name: str) -> bool:
         """Check if a column should be excluded from meaningful change detection."""
         col_lower = column_name.lower()
         return any(pattern.lower() in col_lower for pattern in self.excluded_patterns)
+
+    def _normalize_value(self, value: str) -> str:
+        """Normalize a value for comparison based on case/whitespace settings."""
+        normalized = value or ""
+        if self.trim_whitespace:
+            normalized = normalized.strip()
+        if not self.case_sensitive:
+            normalized = normalized.lower()
+        return normalized
     
     def _make_composite_key(self, row: Dict[str, str]) -> str:
         """Create a composite key from primary key values."""
@@ -82,7 +97,10 @@ class EfficientDiffer:
     def _hash_row(self, row: Dict[str, str], keys: Set[str]) -> str:
         """Create an MD5 hash of row values for the given keys."""
         # Sort keys for consistent hashing
-        values = "|".join(str(row.get(k, "")) for k in sorted(keys))
+        # Apply normalization based on case_sensitive and trim_whitespace settings
+        values = "|".join(
+            self._normalize_value(str(row.get(k, ""))) for k in sorted(keys)
+        )
         return hashlib.md5(values.encode('utf-8')).hexdigest()
     
     def compute_diff(self, prod_file: str, dev_file: str) -> Dict:
@@ -315,11 +333,11 @@ class EfficientDiffer:
                 has_meaningful_change = False
                 
                 for key in common_keys:
-                    prod_val = prod_row.get(key, "")
-                    dev_val = dev_row.get(key, "")
+                    prod_val = self._normalize_value(prod_row.get(key, ""))
+                    dev_val = self._normalize_value(dev_row.get(key, ""))
                     if prod_val != dev_val:
                         is_excluded = self._is_excluded_column(key)
-                        
+
                         # Only count meaningful columns in detailed_changes
                         if not is_excluded:
                             detailed_changes[key] += 1
