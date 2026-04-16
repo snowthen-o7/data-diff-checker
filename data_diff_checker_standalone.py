@@ -29,10 +29,6 @@ while True:
     except OverflowError:
         max_int //= 10
 
-# Base URLs for production and development
-PRODUCTION_BASE_URL = "https://preprocess.proxy.feedonomics.com/preprocess/run_preprocess.php"
-DEVELOPMENT_BASE_URL = "https://3.15.124.182:8012/preprocess/run_preprocess.php"
-
 # Maximum number of example IDs to include in output
 MAX_EXAMPLE_IDS = 10
 
@@ -1230,6 +1226,15 @@ async def main(args: argparse.Namespace):
         
         return
     
+    # URL mode requires both --prod-url and --dev-url
+    if not args.prod_url or not args.dev_url:
+        logging.error(
+            "URL mode requires both --prod-url and --dev-url.\n"
+            "Provide both base URLs, or use local mode (--local-prod + --local-dev)\n"
+            "or folder mode (--local-folder)."
+        )
+        return
+
     # URL mode - validate params file first before creating directories
     logging.info(f"Reading parameters from: {args.params_file}")
     
@@ -1467,8 +1472,8 @@ async def main(args: argparse.Namespace):
         to avoid Shopify bulk operation conflicts.
         Half start with prod, half start with dev to balance load.
         """
-        prod_url = f"{PRODUCTION_BASE_URL}{params}"
-        dev_url = f"{DEVELOPMENT_BASE_URL}{params}"
+        prod_url = f"{args.prod_url}{params}"
+        dev_url = f"{args.dev_url}{params}"
         
         # Alternate which environment goes first to balance load
         # Even test cases: prod first, odd test cases: dev first
@@ -1880,6 +1885,24 @@ def create_parser():
              'Files must match pattern:\n'
              '  prod_response_<N>_<hash>.txt\n'
              '  dev_response_<N>_<hash>.txt'
+    )
+    input_group.add_argument(
+        '--prod-url',
+        type=str,
+        default='',
+        metavar='URL',
+        help='Base URL for the production endpoint.\n'
+             'Required when using URL mode (--params-file).\n'
+             'Query string from each params row is appended.'
+    )
+    input_group.add_argument(
+        '--dev-url',
+        type=str,
+        default='',
+        metavar='URL',
+        help='Base URL for the development endpoint.\n'
+             'Required when using URL mode (--params-file).\n'
+             'Query string from each params row is appended.'
     )
     
     # Output configuration
