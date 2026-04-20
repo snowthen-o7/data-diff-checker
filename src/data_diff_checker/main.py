@@ -349,6 +349,7 @@ async def fetch_and_save(
     environment: str,
     output_dir: str,
     verbose: bool = False,
+    headers: Optional[Dict[str, str]] = None,
 ) -> Tuple[int, str, str, Any, str, Optional[str], Dict[str, Any]]:
     """
     Fetch URL and stream response to file.
@@ -381,7 +382,7 @@ async def fetch_and_save(
     file_path = os.path.join(output_dir, file_name)
     
     try:
-        async with session.get(url, ssl=verify_ssl) as response:
+        async with session.get(url, ssl=verify_ssl, headers=headers) as response:
             status_code = response.status
             
             # Stream to file
@@ -462,31 +463,58 @@ async def run_url_mode(
     try:
         with open(args.params_file, "r", encoding="utf-8") as f:
             reader = csv.DictReader(f)
-            param_list = [row["params"] for row in reader if "params" in row]
+            param_list: List[Tuple[str, Dict[str, str]]] = []
+            header_parse_failures = 0
+            for row_idx, row in enumerate(reader):
+                if "params" not in row:
+                    continue
+                params_value = row["params"]
+                row_headers: Dict[str, str] = {}
+                raw_headers = (row.get("headers") or "").strip()
+                if raw_headers:
+                    try:
+                        parsed = json.loads(raw_headers)
+                        if isinstance(parsed, dict):
+                            row_headers = {str(k): str(v) for k, v in parsed.items()}
+                        else:
+                            raise ValueError("headers cell must be a JSON object")
+                    except (ValueError, json.JSONDecodeError) as parse_err:
+                        header_parse_failures += 1
+                        logging.warning(
+                            f"Row {row_idx}: ignoring invalid 'headers' JSON "
+                            f"({parse_err}): {raw_headers[:120]}"
+                        )
+                param_list.append((params_value, row_headers))
     except Exception as e:
         logging.error(f"Error reading parameters file: {e}")
         return
-    
+
     if not param_list:
         logging.error("No valid parameters found in params file")
         return
-    
+
+    if header_parse_failures:
+        logging.warning(
+            f"{header_parse_failures} row(s) had unparseable 'headers' cells "
+            f"— those rows will use CLI headers only"
+        )
+
     # Deduplicate by unique identifier parameters
     dedup_keys = getattr(args, 'dedup_keys', None) or ["connection_info[store_hash]"]
-    
+
     original_count = len(param_list)
     seen_identifiers: Set[str] = set()
-    deduplicated_params = []
+    deduplicated_params: List[Tuple[str, Dict[str, str]]] = []
     duplicates_removed = 0
-    
-    for params in param_list:
+
+    for params, row_headers in param_list:
         dedup_id = extract_dedup_key(params, dedup_keys)
         if dedup_id:
             if dedup_id in seen_identifiers:
                 duplicates_removed += 1
                 continue
             seen_identifiers.add(dedup_id)
-        deduplicated_params.append(params)
+        deduplicated_params.append((params, row_headers))
     
     if duplicates_removed > 0:
         logging.info(
@@ -561,6 +589,25 @@ async def run_url_mode(
     # Get URLs from args
     prod_base_url = args.prod_url
     dev_base_url = args.dev_url
+
+    # Build request headers from --jwt and --header flags
+    request_headers: Dict[str, str] = {}
+    jwt_token = getattr(args, 'jwt', '') or ''
+    if jwt_token:
+        request_headers['Authorization'] = f'Bearer {jwt_token}'
+    for entry in getattr(args, 'headers', None) or []:
+        if '=' not in entry:
+            logging.warning(f"Ignoring malformed --header (expected KEY=VALUE): {entry}")
+            continue
+        key, value = entry.split('=', 1)
+        key = key.strip()
+        if not key:
+            logging.warning(f"Ignoring --header with empty key: {entry}")
+            continue
+        request_headers[key] = value
+    if request_headers:
+        safe_keys = sorted(request_headers.keys())
+        logging.info(f"Sending custom headers: {safe_keys}")
     
     async def process_diff(test_case: int, prod_info: Dict[str, Any], dev_info: Dict[str, Any]) -> OrderedDict[str, Any]:
         """Process a single diff - runs in thread pool for CPU-bound work."""
@@ -746,10 +793,10 @@ async def run_url_mode(
     
     timeout = aiohttp.ClientTimeout(total=args.timeout)
     
-    async def process_test_case(session, idx: int, params: str):
+    async def process_test_case(session, idx: int, params: str, row_headers: Dict[str, str]):
         """
         Process a single test case with staggered prod/dev fetches.
-        
+
         Concurrency is controlled by fetch_semaphore.
         Within each test case, prod and dev are fetched sequentially
         to avoid bulk operation conflicts.
@@ -757,6 +804,9 @@ async def run_url_mode(
         """
         prod_url = f"{prod_base_url}?{params.lstrip('?')}"
         dev_url = f"{dev_base_url}?{params.lstrip('?')}"
+
+        # Merge CLI headers with per-row headers (row wins on conflicts)
+        effective_headers = {**request_headers, **row_headers} if (request_headers or row_headers) else None
         
         # Alternate which environment goes first to balance load
         if idx % 2 == 0:
@@ -770,10 +820,11 @@ async def run_url_mode(
             progress.log(f"[Test {idx}] Starting ({first_env} first)...")
             
             # Fetch first environment
-            (test_case1, env1, file_path1, status1, 
+            (test_case1, env1, file_path1, status1,
              response_text1, shop_name1, request_params1) = await fetch_and_save(
                 session, first_url, verify_ssl=first_ssl, test_case=idx,
-                environment=first_env, output_dir=run_output_dir, verbose=args.verbose
+                environment=first_env, output_dir=run_output_dir, verbose=args.verbose,
+                headers=effective_headers,
             )
             progress.increment_fetches()
             progress.log(f"[Test {idx}] {first_env.upper()} done (status={status1})")
@@ -782,7 +833,8 @@ async def run_url_mode(
             (test_case2, env2, file_path2, status2,
              response_text2, shop_name2, request_params2) = await fetch_and_save(
                 session, second_url, verify_ssl=second_ssl, test_case=idx,
-                environment=second_env, output_dir=run_output_dir, verbose=args.verbose
+                environment=second_env, output_dir=run_output_dir, verbose=args.verbose,
+                headers=effective_headers,
             )
             progress.increment_fetches()
             progress.log(f"[Test {idx}] {second_env.upper()} done (status={status2})")
@@ -813,8 +865,8 @@ async def run_url_mode(
     # Run all test cases
     async with aiohttp.ClientSession(timeout=timeout) as session:
         tasks = [
-            process_test_case(session, idx, params) 
-            for idx, params in enumerate(param_list)
+            process_test_case(session, idx, params, row_headers)
+            for idx, (params, row_headers) in enumerate(param_list)
         ]
         await asyncio.gather(*tasks, return_exceptions=True)
     

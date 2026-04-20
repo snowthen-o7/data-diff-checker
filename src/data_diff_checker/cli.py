@@ -315,6 +315,31 @@ def create_parser() -> argparse.ArgumentParser:
         metavar='URL',
         help=dev_url_help
     )
+
+    default_jwt = get_config_value('jwt', '')
+    jwt_help = (
+        'JWT token sent as "Authorization: Bearer <token>"\n'
+        'on every prod/dev fetch.'
+    )
+    if default_jwt:
+        jwt_help += '\n(from config: ***)'
+    url_group.add_argument(
+        '--jwt',
+        type=str,
+        default=default_jwt,
+        metavar='TOKEN',
+        help=jwt_help,
+    )
+    url_group.add_argument(
+        '--header', '-H',
+        action='append',
+        default=[],
+        metavar='KEY=VALUE',
+        dest='headers',
+        help='Additional HTTP header to send on every fetch.\n'
+             'Repeatable. Overrides --jwt if KEY is Authorization.\n'
+             'Example: -H "X-Api-Key=abc123"',
+    )
     
     # Output configuration
     output_group = parser.add_argument_group(

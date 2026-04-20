@@ -145,6 +145,30 @@ params
 "connection_info[shop_name]=store2&connection_info[api_key]=yyy"
 ```
 
+#### Authentication and custom headers
+
+Attach a JWT or arbitrary headers to every request with CLI flags:
+
+```bash
+# Bearer token on every fetch
+python3 -m data_diff_checker --params-file test_cases.csv --jwt "$MY_JWT"
+
+# Arbitrary headers (repeat -H for multiple)
+python3 -m data_diff_checker --params-file test_cases.csv \
+  -H "X-Api-Key=abc123" -H "X-Tenant=store1"
+```
+
+For per-row headers, add an optional `headers` column to the params CSV containing a JSON object. Per-row headers override CLI headers on key conflicts; empty or missing cells fall back to CLI headers.
+
+```csv
+params,headers
+"connection_info[shop_name]=store1","{""Authorization"":""Bearer token-for-store1""}"
+"connection_info[shop_name]=store2","{""X-Tenant"":""store2"",""Authorization"":""Bearer token-for-store2""}"
+"connection_info[shop_name]=store3",
+```
+
+Precedence (lowest → highest): `jwt` from `.data-diff.json` → `--jwt` → `--header` / `-H` → `headers` column.
+
 ### Command Line Options
 
 ```
@@ -164,6 +188,9 @@ Input Sources:
 URL Mode:
   --prod-url            Base URL for production environment
   --dev-url             Base URL for development environment
+  --jwt                 Bearer token sent as Authorization header on every fetch
+  --header, -H          Extra header (KEY=VALUE). Repeatable. Overrides --jwt
+                        when KEY is Authorization.
 
 Concurrency:
   --max-concurrent-fetches, -F   Max parallel URL fetches (default: 250)
@@ -311,9 +338,12 @@ Create a `.data-diff.json` file in your project directory to set defaults (this 
 {
   "prod_url": "https://api.prod.example.com/endpoint",
   "dev_url": "https://api.dev.example.com/endpoint",
-  "dedup_keys": ["connection_info[store_hash]"]
+  "dedup_keys": ["connection_info[store_hash]"],
+  "jwt": "eyJhbGciOi..."
 }
 ```
+
+The `jwt` key, if set, is used as a default for `--jwt` (sent as `Authorization: Bearer <token>`). Keep it only in the gitignored `.data-diff.json`, never in the params CSV you commit.
 
 With this config, you can run URL mode without specifying URLs every time:
 
@@ -368,6 +398,12 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Changelog
+
+### 1.2.0 (2026)
+- Added `--jwt` flag for sending `Authorization: Bearer <token>` on URL-mode fetches
+- Added repeatable `--header` / `-H KEY=VALUE` flag for arbitrary request headers
+- Added optional `headers` column in the params CSV (JSON object) for per-row header overrides
+- Added `jwt` key support in `.data-diff.json` for storing the default token locally
 
 ### 1.1.0 (2025)
 - Added `case_sensitive` option for case-insensitive comparison
