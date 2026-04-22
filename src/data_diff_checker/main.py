@@ -350,37 +350,39 @@ async def fetch_and_save(
     output_dir: str,
     verbose: bool = False,
     headers: Optional[Dict[str, str]] = None,
-) -> Tuple[int, str, str, Any, str, Optional[str], Dict[str, Any]]:
+) -> Tuple[int, str, str, Any, str, Optional[str], Dict[str, Any], float]:
     """
     Fetch URL and stream response to file.
-    
+
     Returns:
-        Tuple of (test_case, environment, file_path, status_code, response_text, shop_name, request_params)
+        Tuple of (test_case, environment, file_path, status_code, response_text, shop_name, request_params, fetch_duration_seconds)
     """
     if verbose:
         logging.info(f"[Test Case {test_case} - {environment.upper()}] Requesting URL: {url}")
-    
+
     status_code = None
     shop_name = None
-    
+
     # Parse URL
     parsed_url = urlparse(url)
     query_params = parse_qsl(parsed_url.query)
     request_params = parse_url_params_to_json(parsed_url.query)
-    
+
     # Extract shop name
     for key, value in query_params:
         if key == "connection_info[shop_name]":
             shop_name = value
             break
-    
+
     # Generate file name
     query_params.sort(key=lambda x: x[0])
     param_string = '&'.join(f"{k}={v}" for k, v in query_params)
     hash_value = hashlib.md5(param_string.encode('utf-8')).hexdigest()
     file_name = f"{environment}_response_{test_case}_{hash_value}.txt"
     file_path = os.path.join(output_dir, file_name)
-    
+
+    fetch_start_time = datetime.now()
+
     try:
         async with session.get(url, ssl=verify_ssl, headers=headers) as response:
             status_code = response.status
@@ -440,8 +442,10 @@ async def fetch_and_save(
     if status_code not in [200, "timeout", "error"]:
         with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
             response_text = f.read(1000)
-    
-    return (test_case, environment, file_path, status_code, response_text, shop_name, request_params)
+
+    fetch_duration = (datetime.now() - fetch_start_time).total_seconds()
+
+    return (test_case, environment, file_path, status_code, response_text, shop_name, request_params, fetch_duration)
 
 
 async def run_url_mode(
@@ -642,6 +646,10 @@ async def run_url_mode(
                     }
                 test_summary["error"] = error_obj
                 test_summary["non_200"] = True
+                if "fetch_duration" in prod_info:
+                    test_summary["prod_fetch_duration_seconds"] = round(prod_info["fetch_duration"], 2)
+                if "fetch_duration" in dev_info:
+                    test_summary["dev_fetch_duration_seconds"] = round(dev_info["fetch_duration"], 2)
                 progress.increment_errors()
                 return test_summary
 
@@ -733,6 +741,12 @@ async def run_url_mode(
                         abs(prod_in_stock - dev_in_stock), 2
                     )
 
+                # Add per-environment fetch durations
+                if "fetch_duration" in prod_info:
+                    test_summary["prod_fetch_duration_seconds"] = round(prod_info["fetch_duration"], 2)
+                if "fetch_duration" in dev_info:
+                    test_summary["dev_fetch_duration_seconds"] = round(dev_info["fetch_duration"], 2)
+
                 # Add runtime
                 total_test_duration = (datetime.now() - start_time).total_seconds()
                 test_summary["runtime_seconds"] = round(total_test_duration, 2)
@@ -746,6 +760,10 @@ async def run_url_mode(
                 test_summary["dev_status"] = dev_info.get("status")
                 test_summary["error"] = {"msg": str(e)}
                 test_summary["non_200"] = True
+                if "fetch_duration" in prod_info:
+                    test_summary["prod_fetch_duration_seconds"] = round(prod_info["fetch_duration"], 2)
+                if "fetch_duration" in dev_info:
+                    test_summary["dev_fetch_duration_seconds"] = round(dev_info["fetch_duration"], 2)
                 error_duration = (datetime.now() - start_time).total_seconds()
                 test_summary["runtime_seconds"] = round(error_duration, 2)
 
@@ -818,27 +836,29 @@ async def run_url_mode(
         
         async with fetch_semaphore:
             progress.log(f"[Test {idx}] Starting ({first_env} first)...")
-            
+
             # Fetch first environment
             (test_case1, env1, file_path1, status1,
-             response_text1, shop_name1, request_params1) = await fetch_and_save(
+             response_text1, shop_name1, request_params1,
+             fetch_duration1) = await fetch_and_save(
                 session, first_url, verify_ssl=first_ssl, test_case=idx,
                 environment=first_env, output_dir=run_output_dir, verbose=args.verbose,
                 headers=effective_headers,
             )
             progress.increment_fetches()
             progress.log(f"[Test {idx}] {first_env.upper()} done (status={status1})")
-            
+
             # Fetch second environment
             (test_case2, env2, file_path2, status2,
-             response_text2, shop_name2, request_params2) = await fetch_and_save(
+             response_text2, shop_name2, request_params2,
+             fetch_duration2) = await fetch_and_save(
                 session, second_url, verify_ssl=second_ssl, test_case=idx,
                 environment=second_env, output_dir=run_output_dir, verbose=args.verbose,
                 headers=effective_headers,
             )
             progress.increment_fetches()
             progress.log(f"[Test {idx}] {second_env.upper()} done (status={status2})")
-        
+
         # Build results dict
         results[idx] = {
             first_env: {
@@ -846,14 +866,16 @@ async def run_url_mode(
                 "status": status1,
                 "response_text": response_text1,
                 "shop_name": shop_name1,
-                "request_params": request_params1
+                "request_params": request_params1,
+                "fetch_duration": fetch_duration1,
             },
             second_env: {
                 "file": file_path2,
                 "status": status2,
                 "response_text": response_text2,
                 "shop_name": shop_name2,
-                "request_params": request_params2
+                "request_params": request_params2,
+                "fetch_duration": fetch_duration2,
             }
         }
         
