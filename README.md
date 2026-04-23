@@ -207,7 +207,7 @@ Other:
 
 ## Output Format
 
-### Summary JSON Structure
+### Local Mode Summary
 
 ```json
 {
@@ -236,6 +236,47 @@ Other:
 }
 ```
 
+### URL Mode Summary (per test case)
+
+URL mode emits one object per test case inside the `diffs_summary_*.json` arrays. Additional fields on top of the local-mode shape:
+
+```json
+{
+  "test_case": 0,
+  "diff_percentage": 0.15,
+  "prod_row_count": 10000,
+  "dev_row_count": 10003,
+  "prod_status": 200,
+  "dev_status": 200,
+  "shop_name": "store1",
+  "request_params": "connection_info[shop_name]=store1",
+  "rows_added": 5,
+  "rows_removed": 2,
+  "rows_updated": 150,
+  "rows_updated_excluded_only": 30,
+  "detailed_key_update_counts": {
+    "title": 45,
+    "price": 30
+  },
+  "example_ids": {
+    "SKU-001": {"prod_line_num": 42, "dev_line_num": 43}
+  },
+  "example_ids_added": ["SKU-900", "SKU-901"],
+  "example_ids_removed": ["SKU-050"],
+  "common_keys": ["id", "title", "price", "availability"],
+  "prod_only_keys": [],
+  "dev_only_keys": ["new_field"],
+  "prod_in_stock_percentage": 87.4,
+  "dev_in_stock_percentage": 87.1,
+  "in_stock_percentage_difference": 0.3,
+  "prod_fetch_duration_seconds": 1.42,
+  "dev_fetch_duration_seconds": 1.61,
+  "runtime_seconds": 3.58
+}
+```
+
+Error rows keep `test_case`, `prod_status`, `dev_status`, fetch durations, and `runtime_seconds`, plus `error` (object with `msg`) and `non_200: true`. `shop_name`, `request_params`, `example_ids*`, and `*_in_stock_percentage` are only present when the underlying data provides them.
+
 ### Key Metrics
 
 | Field | Description |
@@ -246,8 +287,10 @@ Other:
 | `rows_updated_excluded_only` | Rows where only excluded columns changed |
 | `detailed_key_update_counts` | Per-column change counts |
 | `example_ids` | Sample changed rows with line numbers for debugging |
+| `prod_fetch_duration_seconds` | URL mode only — wall-clock time to fetch the prod response |
+| `dev_fetch_duration_seconds` | URL mode only — wall-clock time to fetch the dev response |
 
-### URL Mode Output Structure
+### URL Mode On-Disk Layout
 
 URL mode creates timestamped run folders:
 
@@ -398,6 +441,9 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Changelog
+
+### 1.3.0 (2026)
+- Added `prod_fetch_duration_seconds` and `dev_fetch_duration_seconds` to URL-mode summaries (including non-200 / error rows) so per-environment fetch latency is visible
 
 ### 1.2.0 (2026)
 - Added `--jwt` flag for sending `Authorization: Bearer <token>` on URL-mode fetches
